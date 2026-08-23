@@ -33,9 +33,8 @@ q = judiVector(src_geometry,wavelet)
 ############################### FWI ###########################################
 F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
 
-# The current stochastic batch is used directly by the linear-algebra objective.
-i = 1:q.nsrc
-@judi_objective function fused_fwi(x, observed)
+# Pass the stochastic batch explicitly as objective context.
+@judi_objective function fused_fwi(x, observed, i)
     predicted = F0[i](x) * q[i]
     residual = predicted - observed
     value = .5f0 * norm(residual)^2
@@ -56,8 +55,8 @@ ls = BackTracking(order=3, iterations=10, )
 for j=1:niterations
 
     # get fwi objective function value and gradient
-    global i = randperm(d_obs.nsrc)[1:batchsize]
-    fval, gradient = fused_fwi(model0, d_obs[i])
+    i = randperm(d_obs.nsrc)[1:batchsize]
+    fval, gradient = fused_fwi(model0, d_obs[i], i)
     p = -gradient/norm(gradient, Inf)
     
     println("FWI iteration no: ",j,"; function value: ",fval)

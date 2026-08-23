@@ -46,11 +46,11 @@ function ChainRulesCore.rrule(::typeof(objective_scalar_loss), r)
 	return value, dy -> (ChainRulesCore.NoTangent(), 2 .* r .* dy)
 end
 
-@judi_objective function macro_fwi_l2(x, d_obs)
-	d_syn = F0(x) * q
+@judi_objective function macro_fwi_l2(x, d_obs, source)
+	d_syn = F0(x) * source
 	r = d_syn - d_obs
 	phi = .5f0 * norm(r)^2
-	g = J' * r
+	g = judiJacobian(F0, source)' * r
 	return phi, g
 end
 
@@ -97,9 +97,13 @@ end
 	# linear-algebra fallback. The executable methods below must lower to JUDI's
 	# runtime dispatcher; that dispatcher directly calls fwi_objective or
 	# lsrtm_objective, and the result comparisons verify the selected branch.
-	for objective in (macro_fwi_l2, macro_fwi_chainrules, macro_fwi_studentst,
-				  macro_lsrtm_l2, macro_lsrtm_split)
-		lowered = only(code_lowered(objective, Tuple{Any, Any}))
+	objectives = ((macro_fwi_l2, Tuple{Any, Any, Any}),
+				  (macro_fwi_chainrules, Tuple{Any, Any}),
+				  (macro_fwi_studentst, Tuple{Any, Any}),
+				  (macro_lsrtm_l2, Tuple{Any, Any}),
+				  (macro_lsrtm_split, Tuple{Any, Any}))
+	for (objective, signature) in objectives
+		lowered = only(code_lowered(objective, signature))
 		@test occursin("_judi_optimized_objective", string(lowered))
 	end
 
@@ -107,7 +111,7 @@ end
 	macro_value, macro_gradient = @test_logs(
 		(:debug, r"Executing fused fwi_objective"),
 		match_mode=:any, min_level=Base.CoreLogging.Debug,
-		macro_fwi_l2(model0, dobs)
+		macro_fwi_l2(model0, dobs, q)
 	)
 	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
 	@test macro_value == direct_value

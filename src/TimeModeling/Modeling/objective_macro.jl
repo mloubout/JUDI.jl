@@ -254,8 +254,11 @@ function _rewrite_judi_objective(def)
     signature, body = def.args
     signature isa Expr && signature.head == :call ||
         _objective_error("short-form definitions are not supported")
-    length(signature.args) == 3 ||
-        _objective_error("the objective must take exactly (x, d_obs)")
+    # The first two arguments have fixed roles. Additional positional arguments
+    # carry context (for example a stochastic shot index) and remain available
+    # to expressions in the rewritten body.
+    length(signature.args) >= 3 ||
+        _objective_error("the objective must take at least (x, d_obs)")
 
     # Phase 1: establish the two distinguished function arguments and collect
     # the declarative assignments from the body.

@@ -39,7 +39,7 @@ end
     # Stochastic examples index the real operator and source directly instead
     # of introducing renamed temporary globals.
     indexed_fwi = macroexpand(@__MODULE__, :(
-        @judi_objective function lowered_indexed_fwi(x, d_obs)
+        @judi_objective function lowered_indexed_fwi(x, d_obs, i)
             predicted = F[i](x) * q[i]
             residual = predicted - d_obs
             value = 0.5f0 * norm(residual)^2

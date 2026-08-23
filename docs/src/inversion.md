@@ -238,19 +238,18 @@ end
 
 Calling `misfit(model0, d_obs)` executes `fwi_objective(model0, q, d_obs;
 options=F.options)`, rather than separately evaluating `F(model0) * q` and the
-Jacobian adjoint. The function must take the optimization variable and observed
-data as its two positional arguments. Intermediate assignment names are free to
+Jacobian adjoint. The first two positional arguments are the optimization
+variable and observed data. Additional positional arguments may carry context,
+such as a stochastic batch index. Intermediate assignment names are free to
 change.
 
 ### FWI with stochastic batches
 
-Operators and sources may be rebound before each call, which makes the macro
-compatible with stochastic optimization:
+Context arguments make stochastic optimization explicit without rebinding
+global variables:
 
 ```julia
-i = 1:q.nsrc
-
-@judi_objective function batch_fwi(m, observed)
+@judi_objective function batch_fwi(m, observed, i)
     predicted = F[i](m) * q[i]
     residual = predicted - observed
     value = 0.5f0 * norm(residual)^2
@@ -258,8 +257,8 @@ i = 1:q.nsrc
     return value, gradient
 end
 
-global i = randperm(d_obs.nsrc)[1:batchsize]
-value, gradient = batch_fwi(model0, d_obs[i])
+i = randperm(d_obs.nsrc)[1:batchsize]
+value, gradient = batch_fwi(model0, d_obs[i], i)
 ```
 
 The complete runnable version is in
