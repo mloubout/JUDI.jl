@@ -52,8 +52,7 @@ base = ["test_geometry.jl",
         "test_judiWavefield.jl",
         "test_linear_operators.jl",
         "test_physicalparam.jl",
-        "test_compat.jl",
-        "test_objective_macro.jl"]
+        "test_compat.jl"]
 
 devito = ["test_all_options.jl",
           "test_linearity.jl",

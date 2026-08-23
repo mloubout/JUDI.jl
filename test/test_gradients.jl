@@ -31,6 +31,16 @@ objective_Ml = judiDataMute(q.geometry, dobs.geometry; t0=.2)
 objective_Ml2 = judiTimeDerivative(dobs.geometry, 1)
 objective_Mr = judiTopmute(model0; taperwidth=10)
 
+# Scalar-loss coverage uses a real ChainRules rule and the same production PDE
+# objective as the other cases. The two-argument form is the direct reference
+# passed to fwi_objective for comparison.
+objective_scalar_loss(r) = sum(abs2, r)
+objective_scalar_misfit(x, y) = (objective_scalar_loss(x - y), 2 .* (x - y))
+function ChainRulesCore.rrule(::typeof(objective_scalar_loss), r)
+	value = objective_scalar_loss(r)
+	return value, dy -> (ChainRulesCore.NoTangent(), 2 .* r .* dy)
+end
+
 @judi_objective function macro_fwi_l2(x, d_obs)
 	d_syn = F0(x) * q
 	r = d_syn - d_obs
@@ -39,10 +49,32 @@ objective_Mr = judiTopmute(model0; taperwidth=10)
 	return phi, g
 end
 
+@judi_objective function macro_fwi_chainrules(x, d_obs)
+	d_syn = objective_Ml * F0(x) * q
+	r = d_syn - objective_Ml * d_obs
+	phi = objective_scalar_loss(r)
+	g = J' * objective_Ml' * r
+	return phi, g
+end
+
 @judi_objective function macro_fwi_studentst(x, d_obs)
 	d_syn = objective_Ml * F0(x) * q
 	phi, dr = studentst(d_syn, objective_Ml * d_obs)
 	g = J' * objective_Ml' * dr
+	return phi, g
+end
+
+
+@judi_objective function macro_lsrtm_split(x, d_obs)
+	data_J = objective_Ml * objective_Ml2 * J
+	full_operator = data_J * objective_Mr * objective_Mr
+	d_syn = full_operator * x
+	d_precon = objective_Ml * objective_Ml2 * d_obs
+	r = d_syn - d_precon
+	phi = .5f0 * norm(r)^2
+	data_adjoint = objective_Ml2' * objective_Ml' * r
+	migrated = J' * data_adjoint
+	g = objective_Mr' * objective_Mr' * migrated
 	return phi, g
 end
 
@@ -59,6 +91,16 @@ end
 	# Baseline nonlinear FWI with the default mean-square misfit.
 	macro_value, macro_gradient = macro_fwi_l2(model0, dobs)
 	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# A unary residual loss must obtain its derivative from its real ChainRules
+	# rule and produce the same PDE result as the explicit two-output misfit.
+	macro_value, macro_gradient = macro_fwi_chainrules(model0, dobs)
+	direct_value, direct_gradient = fwi_objective(
+		model0, q, dobs; options=opt,
+		misfit=objective_scalar_misfit, data_precon=objective_Ml
+	)
 	@test macro_value == direct_value
 	@test macro_gradient == direct_gradient
 
@@ -80,6 +122,12 @@ end
 	)
 	@test macro_value == direct_value
 	@test macro_gradient == direct_gradient
+
+	# Splitting the exact same operator chain across intermediate assignments
+	# must resolve to the same production lsrtm_objective invocation.
+	split_value, split_gradient = macro_lsrtm_split(dm, dobs)
+	@test split_value == direct_value
+	@test split_gradient == direct_gradient
 end
 
 ftol = (tti | fs | viscoacoustic) ? 1f-1 : 1f-2
