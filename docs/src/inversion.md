@@ -322,8 +322,9 @@ lsrtm_objective(J.model, J.q, d_obs, dm;
                 model_precon=illumination)
 ```
 
-A runnable LSRTM setup is provided in
-[`examples/scripts/lsrtm_2D.jl`](https://github.com/slimgroup/JUDI.jl/blob/master/examples/scripts/lsrtm_2D.jl).
+The stochastic LSRTM example in
+[`examples/software_paper/lsrtm_marmousi_sgd.jl`](https://github.com/slimgroup/JUDI.jl/blob/master/examples/software_paper/lsrtm_marmousi_sgd.jl)
+uses this form inside its optimization loop.
 
 ### Supported body and fallback
 
