@@ -293,16 +293,6 @@ end
 
 _operator_product(xs) = foldl(*, xs)
 
-# These small indirections keep runtime classification separate from the PDE
-# API call. Besides making the control flow explicit, they let unit tests use a
-# lightweight fake propagator and verify every forwarded argument without
-# constructing a Devito model.
-_fused_lsrtm(J, x, d_obs; kw...) =
-    lsrtm_objective(J.model, J.q, d_obs, x; options=J.options, kw...)
-
-_fused_fwi(F, q, d_obs; kw...) =
-    fwi_objective(F.model, q, d_obs; options=F.options, kw...)
-
 # -----------------------------------------------------------------------------
 # Runtime dispatch
 # -----------------------------------------------------------------------------
@@ -324,8 +314,10 @@ function _judi_optimized_objective(factors::Tuple, x, d_obs; kw...)
         data_precon = isempty(data_factors) ? nothing : _operator_product(data_factors)
         model_precon = isempty(model_factors) ? LinearAlgebra.I : _operator_product(model_factors)
 
-        return _fused_lsrtm(J, x, d_obs; data_precon=data_precon,
-                            model_precon=model_precon, kw...)
+        return lsrtm_objective(
+            J.model, J.q, d_obs, x; options=J.options,
+            data_precon=data_precon, model_precon=model_precon, kw...
+        )
     end
 
     # FWI has the product `data_precon * F(x) * q`. Unlike LSRTM there is no
@@ -340,7 +332,10 @@ function _judi_optimized_objective(factors::Tuple, x, d_obs; kw...)
     data_factors = factors[1:propagator_index-1]
     data_precon = isempty(data_factors) ? nothing : _operator_product(data_factors)
 
-    return _fused_fwi(F, factors[end], d_obs; data_precon=data_precon, kw...)
+    return fwi_objective(
+        F.model, factors[end], d_obs; options=F.options,
+        data_precon=data_precon, kw...
+    )
 end
 
 """Adapt a scalar residual loss to JUDI's `(value, data_derivative)` protocol."""

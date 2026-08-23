@@ -24,6 +24,64 @@ dobs = F*q
 dobs0 = F0*q
 dm1 = 2f0*circshift(dm, 10)
 
+# Real operators used by the @judi_objective integration tests below. These
+# tests intentionally call the production fwi_objective/lsrtm_objective paths;
+# no fake backend or dispatch override is involved.
+objective_Ml = judiDataMute(q.geometry, dobs.geometry; t0=.2)
+objective_Ml2 = judiTimeDerivative(dobs.geometry, 1)
+objective_Mr = judiTopmute(model0; taperwidth=10)
+
+@judi_objective function macro_fwi_l2(x, d_obs)
+	d_syn = F0(x) * q
+	r = d_syn - d_obs
+	phi = .5f0 * norm(r)^2
+	g = J' * r
+	return phi, g
+end
+
+@judi_objective function macro_fwi_studentst(x, d_obs)
+	d_syn = objective_Ml * F0(x) * q
+	phi, dr = studentst(d_syn, objective_Ml * d_obs)
+	g = J' * objective_Ml' * dr
+	return phi, g
+end
+
+@judi_objective function macro_lsrtm_l2(x, d_obs)
+	d_syn = objective_Ml * objective_Ml2 * J * objective_Mr * objective_Mr * x
+	r = d_syn - objective_Ml * objective_Ml2 * d_obs
+	phi = .5f0 * norm(r)^2
+	g = objective_Mr' * objective_Mr' * J' * objective_Ml2' * objective_Ml' * r
+	return phi, g
+end
+
+
+@testset "@judi_objective production FWI/LSRTM dispatch" begin
+	# Baseline nonlinear FWI with the default mean-square misfit.
+	macro_value, macro_gradient = macro_fwi_l2(model0, dobs)
+	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# A custom two-output misfit and data preconditioner must both be forwarded.
+	macro_value, macro_gradient = macro_fwi_studentst(model0, dobs)
+	direct_value, direct_gradient = fwi_objective(
+		model0, q, dobs; options=opt, misfit=studentst, data_precon=objective_Ml
+	)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# LSRTM exercises multi-factor inference on both sides of J. This catches
+	# ordering errors while comparing against the public API itself.
+	macro_value, macro_gradient = macro_lsrtm_l2(dm, dobs)
+	direct_value, direct_gradient = lsrtm_objective(
+		model0, q, dobs, dm; options=opt,
+		data_precon=objective_Ml*objective_Ml2,
+		model_precon=objective_Mr*objective_Mr
+	)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+end
+
 ftol = (tti | fs | viscoacoustic) ? 1f-1 : 1f-2
 
 # ###################################################################################################
