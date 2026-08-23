@@ -99,7 +99,11 @@ end
 	end
 
 	# Baseline nonlinear FWI with the default mean-square misfit.
-	macro_value, macro_gradient = macro_fwi_l2(model0, dobs)
+	macro_value, macro_gradient = @test_logs(
+		(:debug, r"Executing fused fwi_objective"),
+		match_mode=:any, min_level=Base.CoreLogging.Debug,
+		macro_fwi_l2(model0, dobs)
+	)
 	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
 	@test macro_value == direct_value
 	@test macro_gradient == direct_gradient
@@ -124,7 +128,11 @@ end
 
 	# LSRTM exercises multi-factor inference on both sides of J. This catches
 	# ordering errors while comparing against the public API itself.
-	macro_value, macro_gradient = macro_lsrtm_l2(dm, dobs)
+	macro_value, macro_gradient = @test_logs(
+		(:debug, r"Executing fused lsrtm_objective"),
+		match_mode=:any, min_level=Base.CoreLogging.Debug,
+		macro_lsrtm_l2(dm, dobs)
+	)
 	direct_value, direct_gradient = lsrtm_objective(
 		model0, q, dobs, dm; options=opt,
 		data_precon=objective_Ml*objective_Ml2,

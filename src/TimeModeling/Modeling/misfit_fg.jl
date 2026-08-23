@@ -141,6 +141,10 @@ Example
     function_value, gradient = fwi_objective(model, source, dobs)
 """
 function fwi_objective(model::MTypes, q::Dtypes, dobs::Dtypes; options=Options(), kw...)
+    # Besides being useful when diagnosing optimization code, this debug event
+    # lets integration tests prove that @judi_objective selected the fused API
+    # rather than evaluating its original linear-algebra body.
+    @debug "Executing fused fwi_objective"
     n_exp = check_args(model, q, dobs)
     G = n_exp == 1 ? similar(model.m, model) : [similar(get_exp(model, i).m, get_exp(model, i)) for i=1:n_exp]
     f = fwi_objective!(G, model, q, dobs; options=options, kw...)
@@ -159,6 +163,9 @@ Example
     function_value, gradient = lsrtm_objective(model, source, dobs, dm)
 """
 function lsrtm_objective(model::MTypes, q::Dtypes, dobs::Dtypes, dm::dmTypes; options=Options(), nlind=false, kw...)
+    # See fwi_objective above. Debug logging is disabled during normal use and
+    # therefore adds no user-visible output to objective evaluations.
+    @debug "Executing fused lsrtm_objective"
     n_exp = check_args(model, q, dobs, dm)
     G = n_exp == 1 ? similar(model.m, model) : [similar(get_exp(model, i).m, get_exp(model, i)) for i=1:n_exp]
     f = lsrtm_objective!(G, model, q, dobs, dm; options=options, nlind=nlind, kw...)
