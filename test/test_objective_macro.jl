@@ -60,8 +60,35 @@ end
     @test value == 10.0
     @test derivative == [2.0, 6.0]
 
-    @test_throws ArgumentError eval(:(@judi_objective function invalid_dsl(x, d)
+    invalid = :(@judi_objective function invalid_dsl(x, d)
         residual = J * x - d
         return 0.5 * norm(residual), J' * residual
-    end))
+    end)
+    fallback = @test_logs((:warn, r"could not fuse.*original function"),
+                          macroexpand(@__MODULE__, invalid))
+    fallback_text = string(fallback)
+    @test occursin("invalid_dsl", fallback_text)
+    @test occursin("norm", fallback_text)
+    @test !occursin("_judi_optimized_objective", fallback_text)
+
+    unsupported = :(@judi_objective function unsupported_body(x, d)
+        predicted = J * x
+        residual = predicted - d
+        if norm(residual) > 1
+            residual = residual / norm(residual)
+        end
+        return norm(residual), J' * residual
+    end)
+    unsupported_fallback = @test_logs((:warn, r"body may contain only assignments"),
+                                      macroexpand(@__MODULE__, unsupported))
+    @test occursin("if", string(unsupported_fallback))
+
+    @test_logs (:warn, r"could not fuse.*original function") eval(:(
+        @judi_objective function passthrough_objective(x, d)
+            value = sum(x) + sum(d)
+            gradient = x .+ d
+            return value, gradient
+        end
+    ))
+    @test passthrough_objective([1, 2], [3, 4]) == (10, [4, 6])
 end

@@ -255,3 +255,9 @@ A misfit can return `(value, derivative)` as above. Alternatively, an arbitrary
 scalar residual loss can be written as `phi = loss(r)`; the optimized objective
 uses its ChainRules `rrule` to obtain the derivative. Squared L2 remains a
 built-in special case.
+
+The optimization is deliberately best-effort. If the macro cannot safely
+recognize the function body, it emits a warning explaining why fusion was
+skipped and leaves the original function definition unchanged. The objective
+therefore retains its normal linear-algebra behavior instead of failing during
+definition.

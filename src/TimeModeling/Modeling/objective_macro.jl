@@ -19,7 +19,8 @@ macro judi_objective(def)
         esc(_rewrite_judi_objective(def))
     catch err
         err isa ArgumentError || rethrow()
-        :(throw(ArgumentError($(err.msg))))
+        @warn "@judi_objective could not fuse this objective; using the original function definition. Reason: $(err.msg)"
+        esc(def)
     end
 end
 
