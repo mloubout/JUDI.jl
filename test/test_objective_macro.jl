@@ -1,5 +1,5 @@
-# Macro-expansion tests complement the production PDE comparisons in
-# test_gradients.jl. They verify the generated call shape without inventing
+# Dedicated @judi_objective macro-expansion tests complement the production PDE
+# comparisons in test_gradients.jl. They verify the generated call shape without inventing
 # replacement JUDI operators or overriding either objective implementation.
 
 """Return every call expression in an expanded syntax tree."""

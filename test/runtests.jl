@@ -53,6 +53,7 @@ base = ["test_geometry.jl",
         "test_linear_operators.jl",
         "test_physicalparam.jl",
         "test_compat.jl",
+        # AST/lowering coverage; production PDE coverage lives in test_gradients.jl.
         "test_objective_macro.jl"]
 
 devito = ["test_all_options.jl",
