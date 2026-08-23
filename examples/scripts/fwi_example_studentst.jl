@@ -40,6 +40,18 @@ for s=1:d_obs.nsrc
 end
 
 ############################### FWI ###########################################
+F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
+objective_F = F0
+objective_q = q
+objective_J = judiJacobian(objective_F, objective_q)
+objective_misfit = mse
+
+@judi_objective function fused_robust_fwi(x, observed)
+    predicted = objective_F(x) * objective_q
+    value, derivative = objective_misfit(predicted, observed)
+    gradient = objective_J' * derivative
+    return value, gradient
+end
 
 
 # Optimization parameters
@@ -51,9 +63,14 @@ count = 0
 function objective_function(x, misfit=mse)
     model0.m .= reshape(x,model0.n);
 
-    # fwi function value and gradient
+    # Select a stochastic operator/source batch. `objective_misfit` may be any
+    # two-output JUDI misfit, including `mse` and `studentst`.
     i = randperm(d_obs.nsrc)[1:batchsize]
-    fval, grad = fwi_objective(model0, q[i], d_obs[i]; misfit=misfit)
+    global objective_F = F0[i]
+    global objective_q = q[i]
+    global objective_J = judiJacobian(objective_F, objective_q)
+    global objective_misfit = misfit
+    fval, grad = fused_robust_fwi(model0, d_obs[i])
     grad = .125f0*grad/maximum(abs.(grad))  # scale for line search
 
     global count; count+= 1

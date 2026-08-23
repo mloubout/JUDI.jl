@@ -123,7 +123,21 @@ where `precon` can be:
 Similarly, for LSRTM, you can use the `model_precon` keyword argument to be applied to the perturbation `dm` and the `data_precon` keyword argument to be applied to the residual:
 
 ```julia
-lsrtm_objective(model, q, dobs, dm; model_precon=dPrec, data_precon=dmPrec)
+lsrtm_objective(model, q, dobs, dm; model_precon=dmPrec, data_precon=dPrec)
+```
+
+The same optimized call can be generated from linear-algebra notation with
+[`@judi_objective`](@ref). Preconditioners to the left and right of `J` are
+inferred as the data and model preconditioners, respectively:
+
+```julia
+@judi_objective function preconditioned_lsrtm(dm, dobs)
+    predicted = dPrec * J * dmPrec * dm
+    residual = predicted - dPrec * dobs
+    value = 0.5f0 * norm(residual)^2
+    gradient = dmPrec' * J' * dPrec' * residual
+    return value, gradient
+end
 ```
 
 where `dPrec` and `dmPrec` can be:

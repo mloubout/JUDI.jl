@@ -33,6 +33,19 @@ q = judiVector(src_geometry,wavelet)
 ############################### FWI ###########################################
 F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
 
+# The macro keeps this linear-algebra definition readable while lowering each
+# evaluation to fwi_objective. The batch-specific objects are updated below.
+objective_F = F0
+objective_q = q
+objective_J = judiJacobian(objective_F, objective_q)
+@judi_objective function fused_fwi(x, observed)
+    predicted = objective_F(x) * objective_q
+    residual = predicted - observed
+    value = .5f0 * norm(residual)^2
+    gradient = objective_J' * residual
+    return value, gradient
+end
+
 # Optimization parameters
 niterations = parse(Int, get(ENV, "NITER", "10"))
 batchsize = 16
@@ -47,7 +60,10 @@ for j=1:niterations
 
     # get fwi objective function value and gradient
     i = randperm(d_obs.nsrc)[1:batchsize]
-    fval, gradient = fwi_objective(model0, q[i], d_obs[i])
+    global objective_F = F0[i]
+    global objective_q = q[i]
+    global objective_J = judiJacobian(objective_F, objective_q)
+    fval, gradient = fused_fwi(model0, d_obs[i])
     p = -gradient/norm(gradient, Inf)
     
     println("FWI iteration no: ",j,"; function value: ",fval)

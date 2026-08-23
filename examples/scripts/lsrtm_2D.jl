@@ -54,6 +54,18 @@ Mr = judiTopmute(model0; taperwidth=10)
 # Left-hand Preconditionners (data top mute)
 Ml = judiDataMute(q.geometry, d_lin.geometry)
 
+# Objective form of preconditioned LSRTM. This is useful with gradient-based
+# optimizers; the LSQR solve below continues to use the same operator `Jp`.
+@judi_objective function fused_lsrtm(dm, observed)
+    predicted = Ml * J * Mr * dm
+    residual = predicted - Ml * observed
+    value = .5f0 * norm(residual)^2
+    gradient = Mr' * J' * Ml' * residual
+    return value, gradient
+end
+
+# For example: `value, gradient = fused_lsrtm(zeros(Float32, prod(model0.n)), d_lin)`.
+
 #' set up number of iterations
 niter = parse(Int, get(ENV, "NITER", "10"))
 # Default to 64, 5 for CI only with NITER=1
