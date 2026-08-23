@@ -220,9 +220,8 @@ Integration with ChainRules allows implementing physics-augmented neural network
 ## Linear-algebra objective macro
 
 The optimized objective routines can also be selected while retaining the
-linear-algebra notation. `@judi_objective` recognizes the canonical
-least-squares FWI expression and compiles the whole body to one call to
-`fwi_objective`:
+linear-algebra notation. `@judi_objective` reads the function body and compiles
+the whole body to one fused FWI or LSRTM call:
 
 ```julia
 F = judiModeling(model0, q.geometry, d_obs.geometry; options=opt)
@@ -237,7 +236,22 @@ J = judiJacobian(F, q)
 end
 ```
 
-For LSRTM, use the same form with `d_syn = J * x`. The macro deliberately
-accepts only this canonical squared-L2 expression. It reports unsupported
-forms at definition time instead of applying an optimization that could
-change the objective's meaning.
+For LSRTM, data and model preconditioners—including an illumination
+preconditioner—are inferred from the operator chain. The chain may be assembled
+over intermediate assignments:
+
+```julia
+@judi_objective function robust_lsrtm(x, d_obs)
+    PJ = Pdata * J
+    A = PJ * illumination
+    d_syn = A * x
+    phi, dr = studentst(d_syn, Pdata * d_obs)
+    g = illumination' * J' * Pdata' * dr
+    return phi, g
+end
+```
+
+A misfit can return `(value, derivative)` as above. Alternatively, an arbitrary
+scalar residual loss can be written as `phi = loss(r)`; the optimized objective
+uses its ChainRules `rrule` to obtain the derivative. Squared L2 remains a
+built-in special case.
