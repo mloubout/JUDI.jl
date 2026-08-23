@@ -88,6 +88,16 @@ end
 
 
 @testset "@judi_objective production FWI/LSRTM dispatch" begin
+	# These checks guard against the macro silently taking its documented
+	# linear-algebra fallback. The executable methods below must lower to JUDI's
+	# runtime dispatcher; that dispatcher directly calls fwi_objective or
+	# lsrtm_objective, and the result comparisons verify the selected branch.
+	for objective in (macro_fwi_l2, macro_fwi_chainrules, macro_fwi_studentst,
+				  macro_lsrtm_l2, macro_lsrtm_split)
+		lowered = only(code_lowered(objective, Tuple{Any, Any}))
+		@test occursin("_judi_optimized_objective", string(lowered))
+	end
+
 	# Baseline nonlinear FWI with the default mean-square misfit.
 	macro_value, macro_gradient = macro_fwi_l2(model0, dobs)
 	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
