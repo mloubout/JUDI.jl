@@ -310,13 +310,21 @@ function _judi_optimized_objective(factors::Tuple, x, d_obs; kw...)
 
         data_factors = factors[1:jacobian_index-1]
         model_factors = factors[jacobian_index+1:end-1]
-        # Empty products use the precise defaults expected by misfit_fg.jl.
-        data_precon = isempty(data_factors) ? nothing : _operator_product(data_factors)
-        model_precon = isempty(model_factors) ? LinearAlgebra.I : _operator_product(model_factors)
+
+        # Do not explicitly pass absent preconditioners. The public API defaults
+        # them to `nothing`/`I`, but the distributed keyword splitter only accepts
+        # concrete preconditioners. Forwarding `data_precon=nothing` would reach
+        # `kw_i(nothing, shot)` and fail before starting the PDE solve.
+        objective_kw = (; kw...)
+        if !isempty(data_factors)
+            objective_kw = merge(objective_kw, (; data_precon=_operator_product(data_factors)))
+        end
+        if !isempty(model_factors)
+            objective_kw = merge(objective_kw, (; model_precon=_operator_product(model_factors)))
+        end
 
         return lsrtm_objective(
-            J.model, J.q, d_obs, x; options=J.options,
-            data_precon=data_precon, model_precon=model_precon, kw...
+            J.model, J.q, d_obs, x; options=J.options, objective_kw...
         )
     end
 
@@ -330,11 +338,14 @@ function _judi_optimized_objective(factors::Tuple, x, d_obs; kw...)
 
     F = factors[propagator_index]
     data_factors = factors[1:propagator_index-1]
-    data_precon = isempty(data_factors) ? nothing : _operator_product(data_factors)
+
+    objective_kw = (; kw...)
+    if !isempty(data_factors)
+        objective_kw = merge(objective_kw, (; data_precon=_operator_product(data_factors)))
+    end
 
     return fwi_objective(
-        F.model, factors[end], d_obs; options=F.options,
-        data_precon=data_precon, kw...
+        F.model, factors[end], d_obs; options=F.options, objective_kw...
     )
 end
 
