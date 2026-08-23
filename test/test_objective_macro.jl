@@ -36,6 +36,21 @@ end
     @test occursin("(F(x), q)", string(only(calls)))
     @test !occursin("norm", string(fwi))
 
+    # Stochastic examples index the real operator and source directly instead
+    # of introducing renamed temporary globals.
+    indexed_fwi = macroexpand(@__MODULE__, :(
+        @judi_objective function lowered_indexed_fwi(x, d_obs)
+            predicted = F[i](x) * q[i]
+            residual = predicted - d_obs
+            value = 0.5f0 * norm(residual)^2
+            gradient = judiJacobian(F[i], q[i])' * residual
+            return value, gradient
+        end
+    ))
+    indexed_call = string(only(optimized_objective_calls(indexed_fwi)))
+    @test occursin("(F[i])(x)", indexed_call)
+    @test occursin("q[i]", indexed_call)
+
     lsrtm = macroexpand(@__MODULE__, :(
         @judi_objective function lowered_lsrtm(x, d_obs)
             d_syn = Pdata * J * Pmodel * x

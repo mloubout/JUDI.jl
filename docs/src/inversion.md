@@ -248,22 +248,17 @@ Operators and sources may be rebound before each call, which makes the macro
 compatible with stochastic optimization:
 
 ```julia
-objective_F = F
-objective_q = q
-objective_J = judiJacobian(F, q)
+i = 1:q.nsrc
 
 @judi_objective function batch_fwi(m, observed)
-    predicted = objective_F(m) * objective_q
+    predicted = F[i](m) * q[i]
     residual = predicted - observed
     value = 0.5f0 * norm(residual)^2
-    gradient = objective_J' * residual
+    gradient = judiJacobian(F[i], q[i])' * residual
     return value, gradient
 end
 
-i = randperm(d_obs.nsrc)[1:batchsize]
-objective_F = F[i]
-objective_q = q[i]
-objective_J = judiJacobian(objective_F, objective_q)
+global i = randperm(d_obs.nsrc)[1:batchsize]
 value, gradient = batch_fwi(model0, d_obs[i])
 ```
 

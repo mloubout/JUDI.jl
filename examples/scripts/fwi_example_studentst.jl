@@ -41,15 +41,19 @@ end
 
 ############################### FWI ###########################################
 F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
-objective_F = F0
-objective_q = q
-objective_J = judiJacobian(objective_F, objective_q)
-objective_misfit = mse
+i = 1:q.nsrc
 
-@judi_objective function fused_robust_fwi(x, observed)
-    predicted = objective_F(x) * objective_q
-    value, derivative = objective_misfit(predicted, observed)
-    gradient = objective_J' * derivative
+@judi_objective function fused_mse_fwi(x, observed)
+    predicted = F0[i](x) * q[i]
+    value, derivative = mse(predicted, observed)
+    gradient = judiJacobian(F0[i], q[i])' * derivative
+    return value, gradient
+end
+
+@judi_objective function fused_studentst_fwi(x, observed)
+    predicted = F0[i](x) * q[i]
+    value, derivative = studentst(predicted, observed)
+    gradient = judiJacobian(F0[i], q[i])' * derivative
     return value, gradient
 end
 
@@ -60,17 +64,11 @@ batchsize = 8
 
 # Objective function for minConf library
 count = 0
-function objective_function(x, misfit=mse)
+function objective_function(x, objective)
     model0.m .= reshape(x,model0.n);
 
-    # Select a stochastic operator/source batch. `objective_misfit` may be any
-    # two-output JUDI misfit, including `mse` and `studentst`.
-    i = randperm(d_obs.nsrc)[1:batchsize]
-    global objective_F = F0[i]
-    global objective_q = q[i]
-    global objective_J = judiJacobian(objective_F, objective_q)
-    global objective_misfit = misfit
-    fval, grad = fused_robust_fwi(model0, d_obs[i])
+    global i = randperm(d_obs.nsrc)[1:batchsize]
+    fval, grad = objective(model0, d_obs[i])
     grad = .125f0*grad/maximum(abs.(grad))  # scale for line search
 
     global count; count+= 1
@@ -81,8 +79,8 @@ end
 proj(x) = reshape(median([vec(mmin) vec(x) vec(mmax)]; dims=2), size(x))
 
 # Compare l2 with students t
-ϕmse = x->objective_function(x)
-ϕst = x->objective_function(x, studentst)
+ϕmse = x->objective_function(x, fused_mse_fwi)
+ϕst = x->objective_function(x, fused_studentst_fwi)
 
 # FWI with SPG
 options = spg_options(verbose=3, maxIter=fevals, memory=3)
