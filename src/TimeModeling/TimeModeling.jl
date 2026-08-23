@@ -55,6 +55,7 @@ include("Modeling/distributed.jl") # Modeling functions utilities
 include("Modeling/python_interface.jl")  # forward/adjoint linear/nonlinear modeling
 include("Modeling/time_modeling_serial.jl")  # forward/adjoint linear/nonlinear modeling
 include("Modeling/misfit_fg.jl")  # FWI/LSRTM objective function value and gradient
+include("Modeling/objective_macro.jl")  # Fused objective DSL
 include("Modeling/twri_objective.jl")  # TWRI objective function value and gradient
 include("Modeling/propagation.jl")
 

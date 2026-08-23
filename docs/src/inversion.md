@@ -216,3 +216,28 @@ gs[x]	# gradient w.r.t. to x
 Integration with ChainRules allows implementing physics-augmented neural networks for seismic inversion, such as loop-unrolled seismic imaging algorithms. For example, the following results are a conventional RTM image, an LS-RTM image and a loop-unrolled LS-RTM image for a single simultaneous shot record.
 
 ![flux](./figures/figure1.png)
+
+## Linear-algebra objective macro
+
+The optimized objective routines can also be selected while retaining the
+linear-algebra notation. `@judi_objective` recognizes the canonical
+least-squares FWI expression and compiles the whole body to one call to
+`fwi_objective`:
+
+```julia
+F = judiModeling(model0, q.geometry, d_obs.geometry; options=opt)
+J = judiJacobian(F, q)
+
+@judi_objective function misfit(x, d_obs)
+    d_syn = F(x) * q
+    r = d_syn - d_obs
+    phi = 0.5f0 * norm(r)^2
+    g = J' * r
+    return phi, g
+end
+```
+
+For LSRTM, use the same form with `d_syn = J * x`. The macro deliberately
+accepts only this canonical squared-L2 expression. It reports unsupported
+forms at definition time instead of applying an optimization that could
+change the objective's meaning.
