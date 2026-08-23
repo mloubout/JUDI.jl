@@ -28,7 +28,10 @@ struct _ObjectiveTestPropagator <: judiPropagator{Float32, :forward}
     options
 end
 
-import JUDI: _fused_fwi, _fused_lsrtm
+# These helpers are intentionally internal and therefore are not brought into
+# Main by `using JUDI` in runtests.jl. Import every helper exercised directly
+# by this test file rather than relying on package-internal name resolution.
+import JUDI: _chainrules_misfit, _fused_fwi, _fused_lsrtm
 function _fused_lsrtm(J::_ObjectiveTestJacobian, x, d_obs;
                       data_precon, model_precon, misfit=mse)
     # Return a deterministic value as well as all arguments inferred by the
