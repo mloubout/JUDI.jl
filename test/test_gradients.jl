@@ -9,6 +9,11 @@
 # Ziyi Yin, ziyi.yin@gatech.edu
 # Updated July 2021
 
+# JUDI depends on ChainRulesCore, but `using JUDI` does not re-export the module
+# binding into Main. Import the namespace explicitly for the integration-test
+# rrule below.
+import ChainRulesCore
+
 ### Model
 model, model0, dm = setup_model(tti, viscoacoustic, 4)
 q, srcGeometry, recGeometry, f0 = setup_geom(model)
