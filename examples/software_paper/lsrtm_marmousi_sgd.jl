@@ -42,6 +42,14 @@ Mr = judiTopmute(model0; taperwidth=10)
 # Left preconditioner
 Ml = judiDataMute(q.geometry, d_lin.geometry)    # data topmute
 
+@judi_objective function lsrtm_sgd_objective(dm, observed, i)
+    predicted = Ml[i] * J[i] * Mr * dm
+    residual = predicted - Ml[i] * observed
+    value = .5f0 * norm(residual)^2
+    gradient = Mr' * J[i]' * Ml[i]' * residual
+    return value, gradient
+end
+
 # Stochastic gradient
 x = zeros(Float32, prod(model.n))
 batchsize = 10
@@ -55,13 +63,11 @@ for j = 1: niter
     # Select batch and set up left-hand preconditioner
     i = randperm(d_lin.nsrc)[1: batchsize]
 
-    # Compute residual and gradient
-    r = Ml[i]*J[i]*Mr*x - Ml[i]*d_lin[i]
-    g = adjoint(Mr)*adjoint(J[i])*adjoint(Ml[i])*r
+    # Compute the value and gradient with the fused LSRTM implementation.
+    fval[j], g = lsrtm_sgd_objective(x, d_lin[i], i)
 
     # Step size and update variable
-    fval[j] = .5f0*norm(r)^2
-    t = norm(r)^2/norm(g)^2
+    t = 2f0*fval[j]/norm(g)^2
     global x -= t*g
 end
 

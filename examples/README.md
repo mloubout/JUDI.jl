@@ -29,6 +29,10 @@ Pkg.add("LineSearches")
 
  * Generic JUDI examples can be found in [scripts](https://github.com/slimgroup/JUDI.jl/tree/master/examples/scripts)
 
+   The FWI scripts and the software-paper LSRTM SGD example demonstrate
+   `@judi_objective`, which retains JUDI's linear-algebra notation while using
+   the fused PDE objective implementations.
+
  * Jupyter notebooks for FWI can be found in [notebooks](https://github.com/slimgroup/JUDI.jl/tree/master/examples/notebooks)
 
  * Reproducable examples for *A large-scale framework for symbolic implementations of seismic inversion algorithms in Julia* are available in [software_paper](https://github.com/slimgroup/JUDI.jl/tree/master/examples/software_paper)

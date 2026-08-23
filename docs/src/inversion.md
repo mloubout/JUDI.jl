@@ -216,3 +216,133 @@ gs[x]	# gradient w.r.t. to x
 Integration with ChainRules allows implementing physics-augmented neural networks for seismic inversion, such as loop-unrolled seismic imaging algorithms. For example, the following results are a conventional RTM image, an LS-RTM image and a loop-unrolled LS-RTM image for a single simultaneous shot record.
 
 ![flux](./figures/figure1.png)
+
+## Linear-algebra objective macro
+
+The optimized objective routines can also be selected while retaining the
+linear-algebra notation. `@judi_objective` reads the function body and compiles
+the whole body to one fused FWI or LSRTM call:
+
+```julia
+F = judiModeling(model0, q.geometry, d_obs.geometry; options=opt)
+J = judiJacobian(F, q)
+
+@judi_objective function misfit(x, d_obs)
+    d_syn = F(x) * q
+    r = d_syn - d_obs
+    phi = 0.5f0 * norm(r)^2
+    g = J' * r
+    return phi, g
+end
+```
+
+Calling `misfit(model0, d_obs)` executes `fwi_objective(model0, q, d_obs;
+options=F.options)`, rather than separately evaluating `F(model0) * q` and the
+Jacobian adjoint. The first two positional arguments are the optimization
+variable and observed data. Additional positional arguments may carry context,
+such as a stochastic batch index. Intermediate assignment names are free to
+change.
+
+### FWI with stochastic batches
+
+Context arguments make stochastic optimization explicit without rebinding
+global variables:
+
+```julia
+@judi_objective function batch_fwi(m, observed, i)
+    predicted = F[i](m) * q[i]
+    residual = predicted - observed
+    value = 0.5f0 * norm(residual)^2
+    gradient = judiJacobian(F[i], q[i])' * residual
+    return value, gradient
+end
+
+i = randperm(d_obs.nsrc)[1:batchsize]
+value, gradient = batch_fwi(model0, d_obs[i], i)
+```
+
+The complete runnable version is in
+[`examples/scripts/fwi_example_2D.jl`](https://github.com/slimgroup/JUDI.jl/blob/master/examples/scripts/fwi_example_2D.jl).
+
+### Misfits
+
+The following objective spellings are supported:
+
+* Squared L2: `value = 0.5 * norm(residual)^2` (the scalar may be on either
+  side of the multiplication).
+* A JUDI-style misfit returning its data derivative:
+  `value, derivative = studentst(predicted, observed)`.
+* A unary scalar loss: `value = loss(residual)`. In this case `loss` must have a
+  ChainRules `rrule`; its pullback supplies the adjoint source to the fused PDE
+  kernel.
+
+For example, a robust FWI definition is:
+
+```julia
+@judi_objective function robust_fwi(m, observed)
+    predicted = F(m) * q
+    value, derivative = studentst(predicted, observed)
+    gradient = J' * derivative
+    return value, gradient
+end
+```
+
+See
+[`examples/scripts/fwi_example_studentst.jl`](https://github.com/slimgroup/JUDI.jl/blob/master/examples/scripts/fwi_example_studentst.jl)
+for a stochastic comparison of L2 and Student's-T inversion.
+
+### LSRTM and preconditioners
+
+For LSRTM, data and model preconditioners—including an illumination
+preconditioner—are inferred from the operator chain. The chain may be assembled
+over intermediate assignments:
+
+```julia
+@judi_objective function robust_lsrtm(x, d_obs)
+    PJ = Pdata * J
+    A = PJ * illumination
+    d_syn = A * x
+    phi, dr = studentst(d_syn, Pdata * d_obs)
+    g = illumination' * J' * Pdata' * dr
+    return phi, g
+end
+```
+
+Factors before `J` become the `data_precon` keyword; factors between `J` and
+the optimization variable become `model_precon`. Their written order is
+preserved. Write the same data-space chain on the observed-data expression so
+the linear-algebra definition describes the fused call. With the example above,
+calling `robust_lsrtm(dm, d_obs)` is equivalent to:
+
+```julia
+lsrtm_objective(J.model, J.q, d_obs, dm;
+                options=J.options,
+                misfit=studentst,
+                data_precon=Pdata,
+                model_precon=illumination)
+```
+
+The stochastic LSRTM example in
+[`examples/software_paper/lsrtm_marmousi_sgd.jl`](https://github.com/slimgroup/JUDI.jl/blob/master/examples/software_paper/lsrtm_marmousi_sgd.jl)
+uses this form inside its optimization loop.
+
+### Supported body and fallback
+
+A misfit can return `(value, derivative)` as above. Alternatively, an arbitrary
+scalar residual loss can be written as `phi = loss(r)`; the optimized objective
+uses its ChainRules `rrule` to obtain the derivative. Squared L2 remains a
+built-in special case.
+
+The optimization is deliberately best-effort. If the macro cannot safely
+recognize the function body, it emits a warning explaining why fusion was
+skipped and leaves the original function definition unchanged. The objective
+therefore retains its normal linear-algebra behavior instead of failing during
+definition.
+
+For safe lowering, the body is intentionally declarative: assignments followed
+by `return value, gradient`. The prediction must be `F(x) * q` or `J * x`, with
+optional preconditioner factors, and the gradient must be an adjoint operator
+chain ending in the residual or misfit derivative. Unsupported control flow or
+mutation causes the documented warning and fallback. A recognized unary loss
+without an `rrule` instead reports a clear error when evaluated; neither case
+silently changes the objective's meaning.

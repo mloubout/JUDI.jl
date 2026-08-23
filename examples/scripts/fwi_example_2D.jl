@@ -33,6 +33,15 @@ q = judiVector(src_geometry,wavelet)
 ############################### FWI ###########################################
 F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
 
+# Pass the stochastic batch explicitly as objective context.
+@judi_objective function fused_fwi(x, observed, i)
+    predicted = F0[i](x) * q[i]
+    residual = predicted - observed
+    value = .5f0 * norm(residual)^2
+    gradient = judiJacobian(F0[i], q[i])' * residual
+    return value, gradient
+end
+
 # Optimization parameters
 niterations = parse(Int, get(ENV, "NITER", "10"))
 batchsize = 16
@@ -47,7 +56,7 @@ for j=1:niterations
 
     # get fwi objective function value and gradient
     i = randperm(d_obs.nsrc)[1:batchsize]
-    fval, gradient = fwi_objective(model0, q[i], d_obs[i])
+    fval, gradient = fused_fwi(model0, d_obs[i], i)
     p = -gradient/norm(gradient, Inf)
     
     println("FWI iteration no: ",j,"; function value: ",fval)

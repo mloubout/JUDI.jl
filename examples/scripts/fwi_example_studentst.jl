@@ -40,6 +40,21 @@ for s=1:d_obs.nsrc
 end
 
 ############################### FWI ###########################################
+F0 = judiModeling(deepcopy(model0), src_geometry, d_obs.geometry)
+
+@judi_objective function fused_mse_fwi(x, observed, i)
+    predicted = F0[i](x) * q[i]
+    value, derivative = mse(predicted, observed)
+    gradient = judiJacobian(F0[i], q[i])' * derivative
+    return value, gradient
+end
+
+@judi_objective function fused_studentst_fwi(x, observed, i)
+    predicted = F0[i](x) * q[i]
+    value, derivative = studentst(predicted, observed)
+    gradient = judiJacobian(F0[i], q[i])' * derivative
+    return value, gradient
+end
 
 
 # Optimization parameters
@@ -48,12 +63,11 @@ batchsize = 8
 
 # Objective function for minConf library
 count = 0
-function objective_function(x, misfit=mse)
+function objective_function(x, objective)
     model0.m .= reshape(x,model0.n);
 
-    # fwi function value and gradient
     i = randperm(d_obs.nsrc)[1:batchsize]
-    fval, grad = fwi_objective(model0, q[i], d_obs[i]; misfit=misfit)
+    fval, grad = objective(model0, d_obs[i], i)
     grad = .125f0*grad/maximum(abs.(grad))  # scale for line search
 
     global count; count+= 1
@@ -64,8 +78,8 @@ end
 proj(x) = reshape(median([vec(mmin) vec(x) vec(mmax)]; dims=2), size(x))
 
 # Compare l2 with students t
-ϕmse = x->objective_function(x)
-ϕst = x->objective_function(x, studentst)
+ϕmse = x->objective_function(x, fused_mse_fwi)
+ϕst = x->objective_function(x, fused_studentst_fwi)
 
 # FWI with SPG
 options = spg_options(verbose=3, maxIter=fevals, memory=3)

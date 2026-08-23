@@ -9,6 +9,11 @@
 # Ziyi Yin, ziyi.yin@gatech.edu
 # Updated July 2021
 
+# JUDI depends on ChainRulesCore, but `using JUDI` does not re-export the module
+# binding into Main. Import the namespace explicitly for the integration-test
+# rrule below.
+import ChainRulesCore
+
 ### Model
 model, model0, dm = setup_model(tti, viscoacoustic, 4)
 q, srcGeometry, recGeometry, f0 = setup_geom(model)
@@ -23,6 +28,134 @@ J = judiJacobian(F0, q)
 dobs = F*q
 dobs0 = F0*q
 dm1 = 2f0*circshift(dm, 10)
+
+# Real operators used by the @judi_objective integration tests below. These
+# tests intentionally call the production fwi_objective/lsrtm_objective paths;
+# no fake backend or dispatch override is involved.
+objective_Ml = judiDataMute(q.geometry, dobs.geometry; t0=.2)
+objective_Ml2 = judiTimeDerivative(dobs.geometry, 1)
+objective_Mr = judiTopmute(model0; taperwidth=10)
+
+# Scalar-loss coverage uses a real ChainRules rule and the same production PDE
+# objective as the other cases. The two-argument form is the direct reference
+# passed to fwi_objective for comparison.
+objective_scalar_loss(r) = sum(abs2, r)
+objective_scalar_misfit(x, y) = (objective_scalar_loss(x - y), 2 .* (x - y))
+function ChainRulesCore.rrule(::typeof(objective_scalar_loss), r)
+	value = objective_scalar_loss(r)
+	return value, dy -> (ChainRulesCore.NoTangent(), 2 .* r .* dy)
+end
+
+@judi_objective function macro_fwi_l2(x, d_obs, source)
+	d_syn = F0(x) * source
+	r = d_syn - d_obs
+	phi = .5f0 * norm(r)^2
+	g = judiJacobian(F0, source)' * r
+	return phi, g
+end
+
+@judi_objective function macro_fwi_chainrules(x, d_obs)
+	d_syn = objective_Ml * F0(x) * q
+	r = d_syn - objective_Ml * d_obs
+	phi = objective_scalar_loss(r)
+	g = J' * objective_Ml' * r
+	return phi, g
+end
+
+@judi_objective function macro_fwi_studentst(x, d_obs)
+	d_syn = objective_Ml * F0(x) * q
+	phi, dr = studentst(d_syn, objective_Ml * d_obs)
+	g = J' * objective_Ml' * dr
+	return phi, g
+end
+
+
+@judi_objective function macro_lsrtm_split(x, d_obs)
+	data_J = objective_Ml * objective_Ml2 * J
+	full_operator = data_J * objective_Mr * objective_Mr
+	d_syn = full_operator * x
+	d_precon = objective_Ml * objective_Ml2 * d_obs
+	r = d_syn - d_precon
+	phi = .5f0 * norm(r)^2
+	data_adjoint = objective_Ml2' * objective_Ml' * r
+	migrated = J' * data_adjoint
+	g = objective_Mr' * objective_Mr' * migrated
+	return phi, g
+end
+
+@judi_objective function macro_lsrtm_l2(x, d_obs)
+	d_syn = objective_Ml * objective_Ml2 * J * objective_Mr * objective_Mr * x
+	r = d_syn - objective_Ml * objective_Ml2 * d_obs
+	phi = .5f0 * norm(r)^2
+	g = objective_Mr' * objective_Mr' * J' * objective_Ml2' * objective_Ml' * r
+	return phi, g
+end
+
+
+@testset "@judi_objective production FWI/LSRTM dispatch" begin
+	# These checks guard against the macro silently taking its documented
+	# linear-algebra fallback. The executable methods below must lower to JUDI's
+	# runtime dispatcher; that dispatcher directly calls fwi_objective or
+	# lsrtm_objective, and the result comparisons verify the selected branch.
+	objectives = ((macro_fwi_l2, Tuple{Any, Any, Any}),
+				  (macro_fwi_chainrules, Tuple{Any, Any}),
+				  (macro_fwi_studentst, Tuple{Any, Any}),
+				  (macro_lsrtm_l2, Tuple{Any, Any}),
+				  (macro_lsrtm_split, Tuple{Any, Any}))
+	for (objective, signature) in objectives
+		lowered = only(code_lowered(objective, signature))
+		@test occursin("_judi_optimized_objective", string(lowered))
+	end
+
+	# Baseline nonlinear FWI with the default mean-square misfit.
+	macro_value, macro_gradient = @test_logs(
+		(:debug, r"Executing fused fwi_objective"),
+		match_mode=:any, min_level=Base.CoreLogging.Debug,
+		macro_fwi_l2(model0, dobs, q)
+	)
+	direct_value, direct_gradient = fwi_objective(model0, q, dobs; options=opt)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# A unary residual loss must obtain its derivative from its real ChainRules
+	# rule and produce the same PDE result as the explicit two-output misfit.
+	macro_value, macro_gradient = macro_fwi_chainrules(model0, dobs)
+	direct_value, direct_gradient = fwi_objective(
+		model0, q, dobs; options=opt,
+		misfit=objective_scalar_misfit, data_precon=objective_Ml
+	)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# A custom two-output misfit and data preconditioner must both be forwarded.
+	macro_value, macro_gradient = macro_fwi_studentst(model0, dobs)
+	direct_value, direct_gradient = fwi_objective(
+		model0, q, dobs; options=opt, misfit=studentst, data_precon=objective_Ml
+	)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# LSRTM exercises multi-factor inference on both sides of J. This catches
+	# ordering errors while comparing against the public API itself.
+	macro_value, macro_gradient = @test_logs(
+		(:debug, r"Executing fused lsrtm_objective"),
+		match_mode=:any, min_level=Base.CoreLogging.Debug,
+		macro_lsrtm_l2(dm, dobs)
+	)
+	direct_value, direct_gradient = lsrtm_objective(
+		model0, q, dobs, dm; options=opt,
+		data_precon=objective_Ml*objective_Ml2,
+		model_precon=objective_Mr*objective_Mr
+	)
+	@test macro_value == direct_value
+	@test macro_gradient == direct_gradient
+
+	# Splitting the exact same operator chain across intermediate assignments
+	# must resolve to the same production lsrtm_objective invocation.
+	split_value, split_gradient = macro_lsrtm_split(dm, dobs)
+	@test split_value == direct_value
+	@test split_gradient == direct_gradient
+end
 
 ftol = (tti | fs | viscoacoustic) ? 1f-1 : 1f-2
 
