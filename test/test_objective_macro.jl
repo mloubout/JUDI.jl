@@ -87,6 +87,11 @@ end
     @test occursin("studentst", robust_call)
 
     # A unary loss lowers through the package's ChainRules adapter.
+    # Deliberately do not define `custom_loss` or an rrule here: lowering must
+    # only construct syntax and must never execute the loss/adapter. The real
+    # ChainRules execution path is covered with a proper PDE setup in
+    # test_gradients.jl.
+    @test !isdefined(@__MODULE__, :custom_loss)
     chainrules = macroexpand(@__MODULE__, :(
         @judi_objective function lowered_chainrules(x, d_obs)
             d_syn = J * x
@@ -99,6 +104,7 @@ end
     chainrules_call = string(only(optimized_objective_calls(chainrules)))
     @test occursin("_chainrules_misfit", chainrules_call)
     @test occursin("custom_loss", chainrules_call)
+    @test !isdefined(@__MODULE__, :custom_loss)
 
     # Unsupported Julia remains untouched and emits the documented warning.
     unsupported = :(
